@@ -12,6 +12,7 @@ public partial class ColorControl : BaseControl
 	public ColorControl()
 	{
 		_colorSwatch = AddChild<Panel>( "colorswatch" );
+		_colorSwatch.AddEventListener( "onmousedown", OpenPopup );
 
 		_textEntry = AddChild<TextEntry>( "textentry" );
 		_textEntry.OnTextEdited = OnTextEntryChanged;
@@ -34,5 +35,13 @@ public partial class ColorControl : BaseControl
 	void OnTextEntryChanged( string value )
 	{
 		Property.SetValue( value );
+	}
+
+	void OpenPopup()
+	{
+		var popup = new Popup( _colorSwatch, Popup.PositionMode.BelowLeft, 0 );
+
+		var picker = popup.AddChild<ColorPickerControl>();
+		picker.Property = Property;
 	}
 }
