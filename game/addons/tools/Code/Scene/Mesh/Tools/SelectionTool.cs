@@ -311,7 +311,7 @@ public abstract class SelectionTool<T>( MeshTool tool ) : SelectionTool where T 
 
 	private void UpdateNudge()
 	{
-		if ( Gizmo.Pressed.Any || !Application.FocusWidget.IsValid() )
+		if ( Gizmo.Pressed.Any || !Application.FocusWidget.IsValid() || !Gizmo.HasMouseFocus )
 			return;
 
 		var keyUp = Application.IsKeyDown( KeyCode.Up );
