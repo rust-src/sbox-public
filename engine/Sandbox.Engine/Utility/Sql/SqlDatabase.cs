@@ -217,7 +217,7 @@ public sealed class SqlDatabase : IDisposable
 		{
 			DataSource = path,
 			Mode = path == ":memory:" ? SqliteOpenMode.Memory : SqliteOpenMode.ReadWriteCreate,
-			Cache = SqliteCacheMode.Shared
+			Cache = path == ":memory:" ? SqliteCacheMode.Private : SqliteCacheMode.Shared
 		}.ToString();
 
 		_connection = new SqliteConnection( _connectionString );
@@ -477,6 +477,16 @@ public sealed class SqlDatabase : IDisposable
 
 	private static void AddParameters( SqliteCommand cmd, object parameters )
 	{
+		if ( parameters is IDictionary<string, object> dict )
+		{
+			foreach ( var kvp in dict )
+			{
+				var paramName = kvp.Key.StartsWith( '@' ) ? kvp.Key : $"@{kvp.Key}";
+				cmd.Parameters.AddWithValue( paramName, kvp.Value ?? DBNull.Value );
+			}
+			return;
+		}
+
 		var type = parameters.GetType();
 
 		foreach ( var property in type.GetProperties() )
