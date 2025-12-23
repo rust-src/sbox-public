@@ -166,7 +166,7 @@ public class SqlTest
 
 		db.Execute( "CREATE TABLE users ( id INTEGER PRIMARY KEY, name TEXT )" );
 
-		using ( var transaction = db.BeginTransaction() )
+		using ( db.BeginTransaction() )
 		{
 			db.Execute( "INSERT INTO users (name) VALUES ('Alice')" );
 			// No commit, let it dispose
@@ -233,6 +233,58 @@ public class SqlTest
 		Assert.AreEqual( "Alice", row["name"] );
 		Assert.AreEqual( "Alice", row["NAME"] );
 		Assert.AreEqual( "Alice", row["Name"] );
+	}
+
+	[TestMethod]
+	public async Task QueryAsync()
+	{
+		using var db = SqlDatabase.CreateInMemory();
+
+		db.Execute( "CREATE TABLE users ( id INTEGER PRIMARY KEY, name TEXT )" );
+		db.Execute( "INSERT INTO users (name) VALUES ('Alice')" );
+		db.Execute( "INSERT INTO users (name) VALUES ('Bob')" );
+
+		var results = await db.QueryAsync( "SELECT * FROM users ORDER BY id" );
+
+		Assert.AreEqual( 2, results.Count );
+		Assert.AreEqual( "Alice", results[0]["name"] );
+		Assert.AreEqual( "Bob", results[1]["name"] );
+	}
+
+	[TestMethod]
+	public void ErrorHandling_InvalidSql()
+	{
+		using var db = SqlDatabase.CreateInMemory();
+
+		Assert.ThrowsException<Microsoft.Data.Sqlite.SqliteException>( () =>
+		{
+			db.Query( "INVALID SQL SYNTAX" );
+		} );
+	}
+
+	[TestMethod]
+	public void ErrorHandling_NonExistentTable()
+	{
+		using var db = SqlDatabase.CreateInMemory();
+
+		Assert.ThrowsException<Microsoft.Data.Sqlite.SqliteException>( () =>
+		{
+			db.Query( "SELECT * FROM nonexistent_table" );
+		} );
+	}
+
+	[TestMethod]
+	public void ErrorHandling_ConstraintViolation()
+	{
+		using var db = SqlDatabase.CreateInMemory();
+
+		db.Execute( "CREATE TABLE users ( id INTEGER PRIMARY KEY, name TEXT UNIQUE )" );
+		db.Execute( "INSERT INTO users (name) VALUES ('Alice')" );
+
+		Assert.ThrowsException<Microsoft.Data.Sqlite.SqliteException>( () =>
+		{
+			db.Execute( "INSERT INTO users (name) VALUES ('Alice')" ); // Duplicate
+		} );
 	}
 }
 

@@ -279,33 +279,43 @@ public sealed class SqlDatabase : IDisposable
 	/// <param name="query">The SQL query to execute.</param>
 	/// <param name="parameters">Optional anonymous object containing parameter values.</param>
 	/// <returns>A task containing a list of dictionaries where each dictionary represents a row.</returns>
-	/// <remarks>
-	/// This method does not use locking. Ensure you don't call this concurrently with other database operations.
-	/// </remarks>
 	public async Task<List<Dictionary<string, object>>> QueryAsync( string query, object parameters = null )
 	{
 		ThrowIfDisposed();
 
-		using var cmd = CreateCommand( query, parameters );
-		using var reader = await cmd.ExecuteReaderAsync();
-
-		var results = new List<Dictionary<string, object>>();
-
-		while ( await reader.ReadAsync() )
+		// Note: We acquire the lock synchronously to avoid deadlocks.
+		// The actual database operation is async.
+		lock ( _lock )
 		{
-			var row = new Dictionary<string, object>( StringComparer.OrdinalIgnoreCase );
+			// Create command inside lock to ensure thread safety
+			var cmd = CreateCommand( query, parameters );
+			return QueryAsyncInternal( cmd ).GetAwaiter().GetResult();
+		}
+	}
 
-			for ( int i = 0; i < reader.FieldCount; i++ )
+	private async Task<List<Dictionary<string, object>>> QueryAsyncInternal( SqliteCommand cmd )
+	{
+		using ( cmd )
+		using ( var reader = await cmd.ExecuteReaderAsync() )
+		{
+			var results = new List<Dictionary<string, object>>();
+
+			while ( await reader.ReadAsync() )
 			{
-				var name = reader.GetName( i );
-				var value = reader.IsDBNull( i ) ? null : reader.GetValue( i );
-				row[name] = value;
+				var row = new Dictionary<string, object>( StringComparer.OrdinalIgnoreCase );
+
+				for ( int i = 0; i < reader.FieldCount; i++ )
+				{
+					var name = reader.GetName( i );
+					var value = reader.IsDBNull( i ) ? null : reader.GetValue( i );
+					row[name] = value;
+				}
+
+				results.Add( row );
 			}
 
-			results.Add( row );
+			return results;
 		}
-
-		return results;
 	}
 
 	/// <summary>
@@ -357,8 +367,9 @@ public sealed class SqlDatabase : IDisposable
 		{
 			return (T)Convert.ChangeType( value, typeof( T ) );
 		}
-		catch
+		catch ( Exception ex )
 		{
+			Log.Warning( $"SQL: Failed to convert '{value}' to {typeof( T ).Name}: {ex.Message}" );
 			return default;
 		}
 	}
@@ -593,9 +604,9 @@ public sealed class SqlTransaction : IDisposable
 			{
 				Rollback();
 			}
-			catch
+			catch ( Exception ex )
 			{
-				// Ignore rollback errors during dispose
+				Log.Warning( $"SQL: Transaction rollback failed during dispose: {ex.Message}" );
 			}
 		}
 	}

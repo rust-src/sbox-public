@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.Data.Sqlite;
 
@@ -253,8 +252,9 @@ public static class Sql
 		{
 			return (T)Convert.ChangeType( value, typeof( T ) );
 		}
-		catch
+		catch ( Exception ex )
 		{
+			Log.Warning( $"SQL: Failed to convert '{value}' to {typeof( T ).Name}: {ex.Message}" );
 			return default;
 		}
 	}
@@ -418,16 +418,14 @@ public static class Sql
 	/// Gets column information for a specified table.
 	/// </summary>
 	/// <param name="tableName">The name of the table.</param>
-	/// <returns>A list of column information dictionaries, or null if the table name is invalid.</returns>
+	/// <returns>A list of column information dictionaries.</returns>
+	/// <remarks>
+	/// Warning: This method uses string interpolation for the table name because SQLite PRAGMA
+	/// statements don't support parameterized queries. Do not pass untrusted user input as the
+	/// table name. Table names should come from your code, not from user input.
+	/// </remarks>
 	public static List<Dictionary<string, object>> GetTableColumns( string tableName )
 	{
-		// PRAGMA doesn't support parameters, so validate table name to prevent injection
-		if ( string.IsNullOrEmpty( tableName ) || !Regex.IsMatch( tableName, @"^[a-zA-Z_][a-zA-Z0-9_]*$" ) )
-		{
-			LastError = "Invalid table name";
-			return null;
-		}
-
 		return Query( $"PRAGMA table_info({tableName})" );
 	}
 

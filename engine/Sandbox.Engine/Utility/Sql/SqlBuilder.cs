@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Sandbox.Utility;
 
@@ -375,16 +376,16 @@ public sealed class SqlBuilder
 
 		foreach ( var property in type.GetProperties() )
 		{
-			var oldName = $"@{property.Name}";
 			var newName = AddParameter( property.GetValue( parameters ) );
-			result = result.Replace( oldName, newName, StringComparison.OrdinalIgnoreCase );
+			var pattern = $@"@{property.Name}(?![a-zA-Z0-9_])";
+			result = Regex.Replace( result, pattern, newName, RegexOptions.IgnoreCase );
 		}
 
 		foreach ( var field in type.GetFields() )
 		{
-			var oldName = $"@{field.Name}";
 			var newName = AddParameter( field.GetValue( parameters ) );
-			result = result.Replace( oldName, newName, StringComparison.OrdinalIgnoreCase );
+			var pattern = $@"@{field.Name}(?![a-zA-Z0-9_])";
+			result = Regex.Replace( result, pattern, newName, RegexOptions.IgnoreCase );
 		}
 
 		return result;
