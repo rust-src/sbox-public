@@ -17,8 +17,8 @@ FEATURES
     Feature( F_DETAIL, 0..1, "Detail Texture" );
     Feature( F_ENVMAP, 0..1, "Environment Map" );
     Feature( F_HALFLAMBERT, 0..1, "Lighting" );
-    Feature( F_LIGHTWARP, 0..1, "Light Warp" );
-    Feature( F_PHONGWARP, 0..1, "Phong Warp" );
+
+    FeatureRule( Allow1( F_TRANSLUCENT, F_ALPHA_TEST ), "Translucent and Alpha Test are mutually exclusive" );
 }
 
 MODES
@@ -65,20 +65,15 @@ PS
     StaticCombo( S_DETAIL, F_DETAIL, Sys( ALL ) );
     StaticCombo( S_ENVMAP, F_ENVMAP, Sys( ALL ) );
     StaticCombo( S_HALFLAMBERT, F_HALFLAMBERT, Sys( ALL ) );
-    StaticCombo( S_LIGHTWARP, F_LIGHTWARP, Sys( ALL ) );
-    StaticCombo( S_PHONGWARP, F_PHONGWARP, Sys( ALL ) );
+    StaticCombo( S_RENDER_BACKFACES, F_RENDER_BACKFACES, Sys( ALL ) );
+
+    RenderState( CullMode, F_RENDER_BACKFACES ? NONE : DEFAULT );
+    RenderState( AlphaToCoverageEnable, S_ALPHA_TEST );
 
     #include "common/pixel.hlsl"
 
-    float SourceFresnel( float3 vNormal, float3 vEyeDir, float3 vRanges )
+    float SourceFresnel( float3 vNormal, float3 vEyeDir, float3 vEncodedRanges )
     {
-        // Optimized piecewise fresnel: blends low->mid (0-0.5) and mid->high (0.5-1)
-        // vRanges is pre-encoded as ((mid-min)*2, mid, (max-mid)*2)
-        float3 vEncodedRanges = float3(
-            ( vRanges.y - vRanges.x ) * 2.0,
-            vRanges.y,
-            ( vRanges.z - vRanges.y ) * 2.0
-        );
         float f = saturate( 1.0 - dot( vNormal, vEyeDir ) );
         f = f * f - 0.5;
         return vEncodedRanges.y + ( f >= 0.0 ? vEncodedRanges.z : vEncodedRanges.x ) * f;
@@ -86,7 +81,6 @@ PS
 
     float SourceFresnel4( float3 vNormal, float3 vEyeDir )
     {
-        // Traditional fresnel using 4th power (square twice)
         float fresnel = saturate( 1.0 - dot( vNormal, vEyeDir ) );
         fresnel = fresnel * fresnel;
         return fresnel * fresnel;
@@ -103,15 +97,15 @@ PS
         return saturate( flNdotL );
     }
 
-    #if S_LIGHTWARP
-        CreateInputTexture2D( TextureLightWarp, Srgb, 8, "", "_lightwarp", "Light Warp,10/10", Default3( 1.0, 1.0, 1.0 ) );
-        Texture2D g_tLightWarp < Channel( RGB, Box( TextureLightWarp ), Srgb ); OutputFormat( BC7 ); SrgbRead( true ); AddressU( CLAMP ); AddressV( CLAMP ); >;
-    #endif
+    // $lightwarptexture - dynamic uniform (no static combo)
+    CreateInputTexture2D( TextureLightWarp, Srgb, 8, "", "_lightwarp", "Light Warp,10/10", Default3( 1.0, 1.0, 1.0 ) );
+    Texture2D g_tLightWarp < Channel( RGB, Box( TextureLightWarp ), Srgb ); OutputFormat( BC7 ); SrgbRead( true ); AddressU( CLAMP ); AddressV( CLAMP ); >;
+    float g_flLightWarpEnabled < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Light Warp,10/20" ); >;
 
-    #if S_PHONGWARP
-        CreateInputTexture2D( TexturePhongWarp, Srgb, 8, "", "_phongwarp", "Phong Warp,10/10", Default3( 1.0, 1.0, 1.0 ) );
-        Texture2D g_tPhongWarp < Channel( RGB, Box( TexturePhongWarp ), Srgb ); OutputFormat( BC7 ); SrgbRead( true ); AddressU( CLAMP ); AddressV( CLAMP ); >;
-    #endif
+    // $phongwarptexture - dynamic uniform (no static combo)
+    CreateInputTexture2D( TexturePhongWarp, Srgb, 8, "", "_phongwarp", "Phong Warp,10/10", Default3( 1.0, 1.0, 1.0 ) );
+    Texture2D g_tPhongWarp < Channel( RGB, Box( TexturePhongWarp ), Srgb ); OutputFormat( BC7 ); SrgbRead( true ); AddressU( CLAMP ); AddressV( CLAMP ); >;
+    float g_flPhongWarpEnabled < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Phong Warp,10/20" ); >;
 
     void SourceSpecularAndRimTerms( 
         float3 vWorldNormal, float3 vLightDir, float flSpecularExponent,
@@ -128,9 +122,7 @@ PS
 
         if ( bDoSpecularWarp )
         {
-            #if S_PHONGWARP
-                specularLighting *= g_tPhongWarp.Sample( g_sAniso, float2( specularLighting.x, flFresnel ) ).rgb;
-            #endif
+            specularLighting *= g_tPhongWarp.Sample( g_sAniso, float2( specularLighting.x, flFresnel ) ).rgb;
         }
         
         float flNdotL = saturate( dot( vWorldNormal, vLightDir ) );
@@ -150,7 +142,7 @@ PS
             bool bHalfLambert, bool bPhong, float flPhongExponent, float flPhongBoost,
             float3 vPhongTint, float3 vPhongFresnelRanges, float flPhongAlbedoTint, float flPhongMask,
             bool bRimLight, float flRimExponent, float flRimBoost, float flRimMask,
-            bool bLightWarp, bool bPhongWarp, float2 vUV )
+            bool bLightWarp, bool bPhongWarp, bool bNoFog )
         {
             float4 vColor = float4( 0, 0, 0, flOpacity );
             
@@ -179,11 +171,7 @@ PS
                 if ( bLightWarp )
                 {
                     float flWarpCoord = bHalfLambert ? saturate( flNdotL * 0.5 + 0.5 ) : saturate( flNdotL );
-                    #if S_LIGHTWARP
-                        vDiffuseTerm = 2.0 * g_tLightWarp.Sample( g_sAniso, float2( flWarpCoord, 0.5 ) ).rgb;
-                    #else
-                        vDiffuseTerm = float3( flWarpCoord, flWarpCoord, flWarpCoord );
-                    #endif
+                    vDiffuseTerm = 2.0 * g_tLightWarp.Sample( g_sAniso, float2( flWarpCoord, 0.5 ) ).rgb;
                 }
                 else
                 {
@@ -224,10 +212,8 @@ PS
                 vRimLighting *= flRimMultiply;
             }
 
-            float3 vAmbientNormal = normalize( lerp( vNormalWs, vViewWs, 0.3 ) );
-            float3 vAmbient = AmbientLight::From( vPositionWs, i.vPositionSs.xy, vAmbientNormal );
-            float flAmbientScale = bHalfLambert ? 1.15 : 1.0;
-            float3 vIndirectDiffuse = vAlbedo * vAmbient * flAmbientScale;
+            float3 vAmbient = AmbientLight::From( vPositionWs, i.vPositionSs.xy, vNormalWs );
+            float3 vIndirectDiffuse = vAlbedo * vAmbient;
 
             float3 vAmbientRim = float3( 0, 0, 0 );
             if ( bRimLight )
@@ -262,7 +248,8 @@ PS
                 return vColor;
             }
             
-            vColor = DoAtmospherics( vPositionWs, i.vPositionSs.xy, vColor );
+            if ( !bNoFog )
+                vColor = DoAtmospherics( vPositionWs, i.vPositionSs.xy, vColor );
             return vColor;
         }
     };
@@ -277,6 +264,17 @@ PS
     // $alpha - opacity (default 1)
     float g_flAlpha < Default( 1.0 ); Range( 0.0, 1.0 ); UiGroup( "Material,10/40" ); >;
 
+    // $nofog - disable fog (default 0)
+    float g_flNoFog < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Material,10/50" ); >;
+    // $allowalphatocoverage - enable alpha to coverage for MSAA antialiased edges (default 0)
+    float g_flAllowAlphaToCoverage < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Material,10/60" ); >;
+
+    // $seamless_scale - triplanar UV scale (repetitions per unit, 0 = disabled)
+    // $seamless_base - enable seamless base texture
+    float g_flSeamlessScale < Default( 0.0 ); Range( 0.0, 10.0 ); UiGroup( "Seamless,10/10" ); >;
+    // $seamless_detail - enable seamless detail texture (default 0)
+    float g_flSeamlessDetail < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Seamless,10/20" ); >;
+
     #if S_BUMPMAP
         // $bumpmap
         CreateInputTexture2D( TextureNormal, Linear, 8, "NormalizeNormals", "_normal", "Normal Map,10/10", Default3( 0.5, 0.5, 1.0 ) );
@@ -288,20 +286,18 @@ PS
         CreateInputTexture2D( TexturePhongExponent, Linear, 8, "", "_exponent", "Phong,10/10", Default4( 0.5, 0.0, 0.0, 1.0 ) );
         Texture2D g_tPhongExponent < Channel( RGBA, Box( TexturePhongExponent ), Linear ); OutputFormat( BC7 ); SrgbRead( false ); >;
 
-        // $phongexponent - specular exponent (default 5, use -1 to read from texture)
-        float g_flPhongExponent < Default( 20.0 ); Range( -1.0, 150.0 ); UiGroup( "Phong,10/20" ); >;
+        // $phongexponent - specular exponent (SDK default -1 = use texture alpha)
+        float g_flPhongExponent < Default( -1.0 ); Range( -1.0, 150.0 ); UiGroup( "Phong,10/20" ); >;
         // $phongboost - specular boost multiplier (default 1)
         float g_flPhongBoost < Default( 1.0 ); Range( 0.0, 10.0 ); UiGroup( "Phong,10/30" ); >;
         // $phongtint - specular color tint (default [1 1 1])
         float3 g_vPhongTint < UiType( Color ); Default3( 1.0, 1.0, 1.0 ); UiGroup( "Phong,10/40" ); >;
-        // $phongfresnelranges - fresnel remap [min center max] (default [0 0.5 1])
-        float3 g_vPhongFresnelRanges < Default3( 0.0, 0.5, 1.0 ); UiGroup( "Phong,10/50" ); >;
+        // $phongfresnelranges - fresnel remap [min center max]
+        float3 g_vPhongFresnelRanges < Default3( 1.0, 0.5, 1.0 ); UiGroup( "Phong,10/50" ); >;
         // $phongalbedotint - tint specular by albedo (default 0)
         float g_flPhongAlbedoTint < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Phong,10/60" ); >;
         // $basemapalphaphongmask - use base texture alpha as phong mask (default 0)
         int g_nBaseMapAlphaPhongMask < Default( 0 ); Range( 0, 1 ); UiGroup( "Phong,10/70" ); >;
-        // $invertphongmask - invert the phong mask (default 0)
-        int g_nInvertPhongMask < Default( 0 ); Range( 0, 1 ); UiGroup( "Phong,10/80" ); >;
     #endif
 
     #if S_SELFILLUM
@@ -315,13 +311,15 @@ PS
         float g_flSelfIllumMaskControl < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Self Illumination,10/30" ); >;
     #endif
 
+    // $selfillumfresnel - dynamic uniform (no static combo)
+    // $selfillumfresnelminmaxexp - [scale, bias, exponent, brightness] for fresnel-based self-illumination  
+    float4 g_vSelfIllumFresnelParams < Default4( 0.0, 0.0, 1.0, 0.0 ); UiGroup( "Self Illumination Fresnel,10/10" ); >;
+
     #if S_RIMLIGHT
         // $rimlightexponent - rim light exponent (default 4)
         float g_flRimLightExponent < Default( 4.0 ); Range( 0.1, 20.0 ); UiGroup( "Rim Light,10/10" ); >;
         // $rimlightboost - rim light boost (default 1)
         float g_flRimLightBoost < Default( 1.0 ); Range( 0.0, 10.0 ); UiGroup( "Rim Light,10/20" ); >;
-        // $rimmask - use exponent texture alpha as rim mask (default 0)
-        int g_nRimMask < Default( 0 ); Range( 0, 1 ); UiGroup( "Rim Light,10/30" ); >;
     #endif
 
     #if S_DETAIL
@@ -335,17 +333,17 @@ PS
         float g_flDetailBlendFactor < Default( 1.0 ); Range( 0.0, 1.0 ); UiGroup( "Detail,10/30" ); >;
         // $detailblendmode - blend mode 0-9 (default 0 = mod2x)
         int g_nDetailBlendMode < Default( 0 ); Range( 0, 9 ); UiGroup( "Detail,10/40" ); >;
-        // $detailtint - detail color tint (default [1 1 1])
-        float3 g_vDetailTint < UiType( Color ); Default3( 1.0, 1.0, 1.0 ); UiGroup( "Detail,10/50" ); >;
     #endif
 
     #if S_ENVMAP
         // $envmapmask
         CreateInputTexture2D( TextureEnvMapMask, Linear, 8, "", "_envmapmask", "Environment Map,10/10", Default( 1.0 ) );
-        // $envmap
+        // $envmap - explicit cubemap texture
         CreateInputTextureCube( TextureEnvMap, Srgb, 8, "", "_envmap", "Environment Map,10/15", Default3( 0.0, 0.0, 0.0 ) );
         Texture2D g_tEnvMapMask < Channel( R, Box( TextureEnvMapMask ), Linear ); OutputFormat( BC7 ); SrgbRead( false ); >;
         TextureCube g_tEnvMap < Channel( RGBA, Box( TextureEnvMap ), Srgb ); OutputFormat( BC6H ); SrgbRead( true ); >;
+        // 0 = use scene probes (env_cubemap), 1 = use explicit g_tEnvMap texture
+        float g_flUseExplicitEnvMap < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Environment Map,10/16" ); >;
         
         // $envmaptint - envmap color tint (default [1 1 1])
         float3 g_vEnvMapTint < UiType( Color ); Default3( 1.0, 1.0, 1.0 ); UiGroup( "Environment Map,10/20" ); >;
@@ -359,6 +357,8 @@ PS
         int g_nBaseAlphaEnvMapMask < Default( 0 ); Range( 0, 1 ); UiGroup( "Environment Map,10/60" ); >; 
         // $normalmapalphaenvmapmask - use normalmap alpha as envmap mask (default 0)
         int g_nNormalMapAlphaEnvMapMask < Default( 0 ); Range( 0, 1 ); UiGroup( "Environment Map,10/70" ); >;
+        // $selfillum_envmapmask_alpha - use envmap mask alpha for self-illumination (default 0)
+        float g_flSelfIllumEnvMapMaskAlpha < Default( 0.0 ); Range( 0.0, 1.0 ); UiGroup( "Environment Map,10/80" ); >;
     #endif
 
     float3 ApplyDetailTexture( float3 vBase, float3 vDetail, int nBlendMode, float flBlendFactor )
@@ -369,9 +369,10 @@ PS
             default:
                 return vBase * lerp( float3( 1, 1, 1 ), vDetail * 2.0, flBlendFactor );
             case 1: // Additive
+                return saturate( vBase + vDetail * flBlendFactor );
             case 5: // Unlit additive
             case 6: // Unlit additive threshold fade
-                return saturate( vBase + vDetail * flBlendFactor );
+                return vBase;
             case 2: // Translucent detail
             case 3: // Blend factor fade
                 return lerp( vBase, vDetail, flBlendFactor );
@@ -385,17 +386,53 @@ PS
         }
     }
 
+    float3 ApplyDetailTexturePostLighting( float3 vLitColor, float3 vDetail, int nBlendMode, float flBlendFactor )
+    {
+        if ( nBlendMode == 5 ) // Unlit additive selfillum
+        {
+            return vLitColor + vDetail * flBlendFactor;
+        }
+        else if ( nBlendMode == 6 ) // Unlit additive threshold fade
+        {
+            float f = flBlendFactor - 0.5;
+            float fMult = ( f >= 0.0 ) ? 1.0 / flBlendFactor : 4.0 * flBlendFactor;
+            float fAdd = ( f >= 0.0 ) ? 1.0 - fMult : -0.5 * fMult;
+            return vLitColor + saturate( fMult * vDetail + fAdd );
+        }
+        return vLitColor;
+    }
+
+    float4 SampleSeamless( Texture2D tex, float3 vWorldPos, float3 vNormal, float flScale )
+    {
+        float3 vWeights = vNormal * vNormal;
+        float3 vScaledPos = vWorldPos * flScale;
+
+        float4 vSampleX = tex.Sample( g_sAniso, vScaledPos.yz );
+        float4 vSampleY = tex.Sample( g_sAniso, vScaledPos.zx );
+        float4 vSampleZ = tex.Sample( g_sAniso, vScaledPos.xy );
+        
+        return vSampleX * vWeights.x + vSampleY * vWeights.y + vSampleZ * vWeights.z;
+    }
+
     float4 MainPs( PixelInput i ) : SV_Target0
     {
         float2 vUV = i.vTextureCoords.xy;
+        float3 vWorldPos = i.vPositionWithOffsetWs.xyz + g_vCameraPositionWs;
+        float3 vVertexNormalWs = normalize( i.vNormalWs );
 
-        float4 vBaseTexture = g_tColor.Sample( g_sAniso, vUV );
+        float4 vBaseTexture;
+        if ( g_flSeamlessScale > 0.0 )
+            vBaseTexture = SampleSeamless( g_tColor, vWorldPos, vVertexNormalWs, g_flSeamlessScale );
+        else
+            vBaseTexture = g_tColor.Sample( g_sAniso, vUV );
         float3 vAlbedo = vBaseTexture.rgb * g_vColorTint;
         float flBaseAlpha = vBaseTexture.a;
         float flAlpha = flBaseAlpha * g_flAlpha;
 
         #if S_ALPHA_TEST
-            if ( flAlpha < g_flAlphaTestReference )
+            if ( g_flAllowAlphaToCoverage > 0.0 )
+                flAlpha = AdjustOpacityForAlphaToCoverage( flAlpha, g_flAlphaTestReference, 1.0, vUV );
+            else if ( flAlpha < g_flAlphaTestReference )
                 discard;
         #endif
 
@@ -410,11 +447,22 @@ PS
         
         float3 vNormalWs = TransformNormal( vNormalTs, i.vNormalWs, i.vTangentUWs, i.vTangentVWs );
 
+        #if S_RENDER_BACKFACES
+            vNormalWs = i.face ? vNormalWs : -vNormalWs;
+        #endif
+
+        float3 vDetailColor = float3( 0.5, 0.5, 0.5 );
+
         #if S_DETAIL
         {
-            float2 vDetailUV = vUV * g_flDetailScale;
-            float3 vDetail = g_tDetail.Sample( g_sAniso, vDetailUV ).rgb * g_vDetailTint;
-            vAlbedo = ApplyDetailTexture( vAlbedo, vDetail, g_nDetailBlendMode, g_flDetailBlendFactor );
+            if ( g_flSeamlessDetail > 0.0 && g_flSeamlessScale > 0.0 )
+                vDetailColor = SampleSeamless( g_tDetail, vWorldPos, vVertexNormalWs, g_flSeamlessScale * g_flDetailScale ).rgb;
+            else
+            {
+                float2 vDetailUV = vUV * g_flDetailScale;
+                vDetailColor = g_tDetail.Sample( g_sAniso, vDetailUV ).rgb;
+            }
+            vAlbedo = ApplyDetailTexture( vAlbedo, vDetailColor, g_nDetailBlendMode, g_flDetailBlendFactor );
         }
         #endif
 
@@ -432,12 +480,12 @@ PS
         float flPhongExponent = 20.0;
         float flPhongBoost = 1.0;
         float3 vPhongTint = float3( 1, 1, 1 );
-        float3 vPhongFresnelRanges = float3( 0, 0.5, 1 );
+        float3 vPhongFresnelRanges = float3( 1.0, 0.5, 1.0 );
         float flPhongAlbedoTint = 0.0;
         
         #if S_PHONG
         {
-            float4 vExpMapSample = float4( 1.0, 1.0, 0.0, 1.0 );
+            float4 vExpMapSample = float4( 0.5, 0.0, 0.0, 1.0 );
             bool bNeedExpTexture = ( g_flPhongExponent < 0.0 );
             
             if ( bNeedExpTexture )
@@ -457,9 +505,6 @@ PS
                     flPhongMask = 1.0;
                 #endif
             }
-            
-            if ( g_nInvertPhongMask != 0 )
-                flPhongMask = 1.0 - flPhongMask;
 
             if ( g_flPhongExponent >= 0.0 )
             {
@@ -471,8 +516,9 @@ PS
             }
             
             flPhongBoost = g_flPhongBoost;
-            vPhongTint = g_vPhongTint;
             vPhongFresnelRanges = g_vPhongFresnelRanges;
+            vPhongTint = g_vPhongTint;
+            
             flPhongAlbedoTint = g_flPhongAlbedoTint * ( bNeedExpTexture ? vExpMapSample.g : 1.0 );
         }
         #endif
@@ -485,15 +531,10 @@ PS
         {
             flRimExponent = g_flRimLightExponent;
             flRimBoost = g_flRimLightBoost;
-
-            #if S_PHONG
-                if ( g_nRimMask != 0 )
-                {
-                    flRimMask = g_tPhongExponent.Sample( g_sAniso, vUV ).a;
-                }
-            #endif
         }
         #endif
+
+        float flEnvMapMaskAlpha = 0.0;
 
         #if S_ENVMAP
         {
@@ -511,7 +552,9 @@ PS
             }
             else
             {
-                flEnvMapMask = g_tEnvMapMask.Sample( g_sAniso, vUV ).r;
+                float4 vEnvMapMaskSample = g_tEnvMapMask.Sample( g_sAniso, vUV );
+                flEnvMapMask = vEnvMapMaskSample.r;
+                flEnvMapMaskAlpha = vEnvMapMaskSample.a;
             }
             
             float flEnvFresnel = 1.0;
@@ -527,9 +570,12 @@ PS
             #if S_PHONG
                 flRoughness = sqrt( 2.0 / ( flPhongExponent + 2.0 ) );
             #endif
-            
-            float3 vEnvColor = g_tEnvMap.SampleLevel( g_sAniso, vReflectWs, flRoughness * 6.0 ).rgb;
 
+            float3 vEnvColor;
+            if ( g_flUseExplicitEnvMap > 0.0 )
+                vEnvColor = g_tEnvMap.SampleLevel( g_sAniso, vReflectWs, flRoughness * 6.0 ).rgb;
+            else
+                vEnvColor = EnvMap::From( vPositionWs, i.vPositionSs.xy, vReflectWs, flRoughness );
             vEnvColor = lerp( vEnvColor, vEnvColor * vEnvColor, g_flEnvMapContrast );
             
             float flLuminance = dot( vEnvColor, float3( 0.299, 0.587, 0.114 ) );
@@ -551,7 +597,23 @@ PS
         }
         #endif
 
-        return ShadingModelSource::Shade(
+        #if S_ENVMAP
+        if ( g_flSelfIllumEnvMapMaskAlpha > 0.0 )
+        {
+            vEmission += vAlbedo * flEnvMapMaskAlpha * g_flSelfIllumEnvMapMaskAlpha;
+        }
+        #endif
+
+        if ( g_vSelfIllumFresnelParams.w > 0.0 )
+        {
+            float3 vVertexNormal = normalize( i.vNormalWs );
+            float flSelfIllumFresnel = pow( saturate( dot( vVertexNormal, vViewWs ) ), g_vSelfIllumFresnelParams.z );
+            flSelfIllumFresnel = flSelfIllumFresnel * g_vSelfIllumFresnelParams.x + g_vSelfIllumFresnelParams.y;
+            float3 vFresnelEmission = vAlbedo * g_vSelfIllumFresnelParams.w;
+            vEmission = lerp( vEmission, vFresnelEmission, flBaseAlpha * saturate( flSelfIllumFresnel ) );
+        }
+
+        float4 vFinalColor = ShadingModelSource::Shade(
             i,
             vAlbedo,
             vNormalWs,
@@ -573,7 +635,7 @@ PS
             vPhongFresnelRanges,
             flPhongAlbedoTint,
             flPhongMask,
-            #if S_RIMLIGHT && S_PHONG
+            #if S_RIMLIGHT
                 true,
             #else
                 false,
@@ -581,17 +643,18 @@ PS
             flRimExponent,
             flRimBoost,
             flRimMask,
-            #if S_LIGHTWARP
-                true,
-            #else
-                false,
-            #endif
-            #if S_PHONGWARP && S_PHONG
-                true,
-            #else
-                false,
-            #endif
-            vUV
+            g_flLightWarpEnabled > 0.0,
+            g_flPhongWarpEnabled > 0.0,
+            g_flNoFog > 0.0
         );
+
+        #if S_DETAIL
+        if ( g_nDetailBlendMode == 5 || g_nDetailBlendMode == 6 )
+        {
+            vFinalColor.rgb = ApplyDetailTexturePostLighting( vFinalColor.rgb, vDetailColor, g_nDetailBlendMode, g_flDetailBlendFactor );
+        }
+        #endif
+
+        return vFinalColor;
     }
 }
