@@ -566,25 +566,25 @@ internal static class MdlLoader
 			int offsetRightNode = BitConverter.ToInt32( data, currentOffset );
 			int offsetCompactLedge = BitConverter.ToInt32( data, currentOffset + 4 );
 
-			if ( offsetCompactLedge != 0 )
+			if ( offsetRightNode == 0 )
 			{
-				int ledgeOffset = currentOffset + offsetCompactLedge;
-				if ( ledgeOffset >= 0 && ledgeOffset + 16 <= data.Length )
+				if ( offsetCompactLedge != 0 )
 				{
-					short numTriangles = BitConverter.ToInt16( data, ledgeOffset + 12 );
-					if ( numTriangles > 0 )
-						ledges.Add( (ledgeOffset, numTriangles) );
+					int ledgeOffset = currentOffset + offsetCompactLedge;
+					if ( ledgeOffset >= 0 && ledgeOffset + 16 <= data.Length )
+					{
+						short numTriangles = BitConverter.ToInt16( data, ledgeOffset + 12 );
+						if ( numTriangles > 0 )
+							ledges.Add( (ledgeOffset, numTriangles) );
+					}
 				}
 			}
-
-			if ( offsetRightNode != 0 )
+			else
 			{
-				// Right child is at offset_right_node from current node
 				int rightOffset = currentOffset + offsetRightNode;
 				if ( rightOffset >= 0 && rightOffset + NodeSize <= data.Length )
 					nodeStack.Push( rightOffset );
 
-				// Left child is immediately after this node
 				int leftOffset = currentOffset + NodeSize;
 				if ( leftOffset >= 0 && leftOffset + NodeSize <= data.Length )
 					nodeStack.Push( leftOffset );
