@@ -442,7 +442,7 @@ internal static class MdlLoader
 			return (solids, constraints);
 
 		string text = Encoding.ASCII.GetString( data, keyValuesOffset, data.Length - keyValuesOffset );
-		var kv = KeyValues.Parse( "phyroot { " + text + " }" );
+		var kv = KeyValues.Parse( text );
 		if ( kv == null )
 			return (solids, constraints);
 
@@ -674,7 +674,6 @@ internal static class MdlLoader
 
 	private static void LoadModelAnimations( StudioHeader mdl, ModelBuilder builder, int mainBoneCount, int[] boneMapping, (Vector3 pos, Rotation rot)[] mainBasePoses )
 	{
-		// Sequences reference animations and contain the actual name/flags. Animations are just raw bone data
 		var aniData = mdl.GetAniData();
 		bool hasAniFile = !aniData.IsEmpty;
 		var mdlData = mdl.GetData();

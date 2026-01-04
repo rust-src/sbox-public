@@ -169,7 +169,10 @@ internal static class VmtLoader
 			case "$phongexponenttexture": LoadAndSetTexture( material, value, "g_tPhongExponent" ); break;
 			case "$lightwarptexture": LoadAndSetTexture( material, value, "g_tLightWarp" ); break;
 			case "$phongwarptexture": LoadAndSetTexture( material, value, "g_tPhongWarp" ); break;
-			case "$selfillummask": LoadAndSetTexture( material, value, "g_tSelfIllumMask" ); break;
+			case "$selfillummask":
+				LoadAndSetTexture( material, value, "g_tSelfIllumMask" );
+				material.Set( "g_flSelfIllumMaskControl", 1.0f );
+				break;
 			case "$iris": LoadAndSetTexture( material, value, "g_tIris" ); break;
 
 			// Environment Map (special handling)

@@ -194,24 +194,36 @@ internal sealed class KeyValues( string name, string value = null )
 
 		public KeyValues Parse()
 		{
-			SkipWhitespaceAndComments();
+			var root = new KeyValues( string.Empty );
 
-			var name = ReadToken();
-			if ( name == null )
-				return null;
-
-			SkipWhitespaceAndComments();
-
-			if ( _pos < _text.Length && _text[_pos] == '{' )
+			while ( _pos < _text.Length )
 			{
-				_pos++;
-				var kv = new KeyValues( name );
-				ParseChildren( kv );
-				return kv;
+				SkipWhitespaceAndComments();
+
+				if ( _pos >= _text.Length )
+					break;
+
+				var name = ReadToken();
+				if ( name == null )
+					break;
+
+				SkipWhitespaceAndComments();
+
+				if ( _pos < _text.Length && _text[_pos] == '{' )
+				{
+					_pos++;
+					var kv = new KeyValues( name );
+					ParseChildren( kv );
+					root.Children.Add( kv );
+				}
+				else
+				{
+					var value = ReadToken();
+					root.Children.Add( new KeyValues( name, value ) );
+				}
 			}
 
-			var value = ReadToken();
-			return new KeyValues( name, value );
+			return root.Children.Count == 1 ? root.Children[0] : root;
 		}
 
 		private void ParseChildren( KeyValues parent )
