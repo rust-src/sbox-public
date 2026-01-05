@@ -24,9 +24,9 @@ public partial class HL2Mount : BaseGameMount
 			return;
 
 		AddGameDir( baseDir, "hl2" );
+		AddGameDir( baseDir, "lostcoast" );
 		AddGameDir( baseDir, "episodic" );
 		AddGameDir( baseDir, "ep2" );
-		AddGameDir( baseDir, "lostcoast" );
 		AddGameDir( baseDir, "hl2_complete" );
 
 		IsInstalled = _gameDirs.Count > 0;

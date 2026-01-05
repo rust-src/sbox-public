@@ -426,6 +426,15 @@ namespace Sandbox
 
 		private ulong DefaultMeshGroupMask => _groupNames.Count > 0 ? _defaultMeshGroupMask : ulong.MaxValue;
 
+		/// <summary>
+		/// Pre-register a body group choice without adding any mesh.
+		/// </summary>
+		public ModelBuilder RegisterBodyGroupChoice( string groupName, int choiceIndex )
+		{
+			EnsureGroupChoice( groupName, choiceIndex );
+			return this;
+		}
+
 		private int EnsureGroupChoice( string name, int choice )
 		{
 			if ( string.IsNullOrWhiteSpace( name ) ) throw new ArgumentException( null, nameof( name ) );

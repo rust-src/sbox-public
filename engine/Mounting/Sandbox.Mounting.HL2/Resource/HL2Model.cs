@@ -143,6 +143,8 @@ internal static class MdlLoader
 
 			for ( int modelIdx = 0; modelIdx < mdlBodyPart.ModelCount; modelIdx++ )
 			{
+				builder.RegisterBodyGroupChoice( bodyPartName, modelIdx );
+
 				var mdlModel = mdlBodyPart.GetModel( modelIdx );
 				var vtxModel = vtxBodyPart.GetModel( modelIdx );
 
