@@ -36,8 +36,6 @@ internal class ToolsDll : IToolsDll
 
 		EditorCookie = new CookieContainer( "tools" );
 
-		ActionGraphDebugger.Enabled = true;
-
 		// make sure mixer is initialized at least once
 		Mixer.ResetToDefault();
 
