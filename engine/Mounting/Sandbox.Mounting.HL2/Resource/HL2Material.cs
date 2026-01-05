@@ -99,7 +99,8 @@ internal static class VmtLoader
 			material.SetFeature( "F_DETAIL", 1 );
 
 		var envmap = vmt.GetString( "$envmap" );
-		if ( !string.IsNullOrEmpty( envmap ) && envmap != "0" )
+		// Asphaltian: Temporarily discard "env_cubemap" since it looks off currently
+		if ( !string.IsNullOrEmpty( envmap ) && envmap != "0" && !envmap.Equals( "env_cubemap", StringComparison.OrdinalIgnoreCase ) )
 			material.SetFeature( "F_ENVMAP", 1 );
 
 		switch ( shaderName )
