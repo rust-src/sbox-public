@@ -1,5 +1,4 @@
 using NativeEngine;
-using Sandbox.ActionGraphs;
 using Sandbox.Audio;
 using Sandbox.Engine;
 using Sandbox.Internal;
@@ -309,7 +308,8 @@ internal class ToolsDll : IToolsDll
 		var asset = AssetSystem.FindByPath( filename );
 		if ( asset is null ) return null;
 
-		var thumb = asset.GetAssetThumb( true );
+		var thumb = asset.GetAssetThumb( false );
+		if ( thumb is null ) return null;
 
 		// Sorry - we have no fast GetPixels
 		var pixels = thumb.GetPng();
