@@ -64,7 +64,7 @@ public partial class Texture
 			throw new System.Exception( $"targetMemoryRequired <= 0 ({width}x{height}x{depth} {outputFormat})" );
 		}
 
-		var bitmap = new Bitmap( width, height * depth, floatingPoint );
+		using var bitmap = new Bitmap( width, height * depth, floatingPoint );
 		var data = bitmap.GetBuffer();
 
 		if ( data.Length != targetMemoryRequired )

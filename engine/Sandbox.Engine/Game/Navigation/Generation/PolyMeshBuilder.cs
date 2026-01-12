@@ -50,7 +50,7 @@ internal static class PolyMeshBuilder
 		var vflags = pooledVflags.Span;
 		vflags.Clear();
 
-		var mesh = PolyMesh.GetPooled();
+		using var mesh = PolyMesh.GetPooled();
 		mesh.Init( cset, maxVertsPerPoly, maxTris, maxVertices );
 
 		using var pooledNextVert = new PooledSpan<int>( maxVertices );

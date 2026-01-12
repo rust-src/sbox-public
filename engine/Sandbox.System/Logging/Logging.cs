@@ -14,7 +14,7 @@ internal static partial class Logging
 		_initialized = true;
 
 		var config = new NLog.Config.LoggingConfiguration();
-		var game_target = new GameLog();
+		using var game_target = new GameLog();
 
 		NLog.LogManager.Setup().SetupExtensions( s =>
 		{
@@ -33,7 +33,7 @@ internal static partial class Logging
 		var gamePath = System.Environment.GetEnvironmentVariable( "FACEPUNCH_ENGINE", EnvironmentVariableTarget.User );
 		gamePath ??= AppContext.BaseDirectory;
 
-		var file_target = new NLog.Targets.FileTarget
+		using var file_target = new NLog.Targets.FileTarget
 		{
 			FileName = System.IO.Path.Combine( gamePath, $"logs/{appName}.log" ),
 			ArchiveOldFileOnStartup = true,

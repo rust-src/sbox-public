@@ -209,7 +209,7 @@ class HeightFieldGenerator : IDisposable
 		// Compact the heightfield so that it is faster to handle from now on.
 		// This will result more cache coherent data as well as the neighbours
 		// between walkable cells will be calculated.
-		var chf = cachedHeightField.BuildCompactHeightfield( cfg.WalkableHeight, cfg.WalkableClimb );
+		using var chf = cachedHeightField.BuildCompactHeightfield( cfg.WalkableHeight, cfg.WalkableClimb );
 
 		// Erode the walkable area by agent radius.
 		AreaFilter.ErodeWalkableArea( cfg.WalkableRadius, chf );

@@ -691,7 +691,7 @@ internal class ConsoleWidget : Widget
 			var anchor = GetAnchorAt( localPosition );
 			if ( string.IsNullOrEmpty( anchor ) ) return false;
 
-			var cursor = GetCursorAtPosition( localPosition );
+			using var cursor = GetCursorAtPosition( localPosition );
 			if ( cursor.BlockNumber >= Events.Count ) return false;
 			var ev = Events[cursor.BlockNumber];
 
@@ -718,7 +718,10 @@ internal class ConsoleWidget : Widget
 			var hasAnchor = !string.IsNullOrEmpty( GetAnchorAt( e.LocalPosition ) );
 			Cursor = hasAnchor ? CursorShape.Finger : CursorShape.None;
 
+#pragma warning disable CA2000 // Dispose objects before losing scope
+			// Silence this warning, this gets assigned to a field
 			var newHover = GetCursorAtPosition( e.LocalPosition );
+#pragma warning restore CA2000 // Dispose objects before losing scope
 			if ( LastHover != null && newHover.BlockNumber == LastHover.BlockNumber ) return;
 
 			LastHover = newHover;

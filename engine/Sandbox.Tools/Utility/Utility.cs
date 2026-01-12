@@ -860,7 +860,7 @@ public static partial class EditorUtility
 	internal static TypeLibrary CreateTypeLibrary( CompilerOutput[] assemblies )
 	{
 		var library = new TypeLibrary();
-		var packageLoader = new Sandbox.PackageLoader( "EditorTypeLibrary", typeof( GameInstanceDll ).Assembly );
+		using var packageLoader = new Sandbox.PackageLoader( "EditorTypeLibrary", typeof( GameInstanceDll ).Assembly );
 		using var enroller = packageLoader.CreateEnroller( "EditorTypeLibrary" );
 
 		enroller.OnAssemblyAdded = ( a ) =>
