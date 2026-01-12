@@ -257,9 +257,9 @@ public partial class ComponentSheet : Widget
 		if ( ViewMode == ComponentViewMode.Events && !hideInEventTab ) return false;
 		if ( ViewMode != ComponentViewMode.Events && hideInEventTab ) return false;
 
+		if ( o.HasAttribute<AdvancedAttribute>() && showAdvanced == false ) return false;
 		if ( o.IsMethod ) return true;
 		if ( o.HasAttribute<PropertyAttribute>() == false ) return false;
-		if ( o.HasAttribute<AdvancedAttribute>() && showAdvanced == false ) return false;
 
 		return true;
 	}
