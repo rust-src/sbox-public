@@ -62,7 +62,12 @@ public partial class Texture
 		filepath = filepath.Replace( ".vtex_c", ".vtex" );
 
 		if ( Sandbox.Mounting.Directory.TryLoad( filepath, out object model ) && model is Texture m )
+		{
+			if ( string.IsNullOrEmpty( m.ResourcePath ) )
+				m.RegisterWeakResourceId( filepath );
+
 			return m;
+		}
 
 		if ( !TextureLoader.ImageUrl.IsAppropriate( filepath ) && !TextureLoader.ImageDataUri.IsAppropriate( filepath ) )
 			filepath = filepath.NormalizeFilename( false );
